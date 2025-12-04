@@ -1,0 +1,42 @@
+name: Weekly User Commits
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # jede Stunde
+  workflow_dispatch:
+
+jobs:
+  commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch commits
+        run: |
+          sudo apt-get install -y jq
+          SINCE=$(date -u -d "7 days ago" +"%Y-%m-%dT%H:%M:%SZ")
+
+          TOTAL=0
+          PAGE=1
+
+          while [ $PAGE -le 10 ]; do
+            DATA=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+              "https://api.github.com/search/commits?q=author:${{ github.repository_owner }}+committer-date:>$SINCE&page=$PAGE")
+
+            COUNT=$(echo "$DATA" | jq '.items | length')
+            TOTAL=$((TOTAL + COUNT))
+
+            [ "$COUNT" -lt 30 ] && break
+            PAGE=$((PAGE + 1))
+          done
+
+          mkdir -p stats
+          echo "{ \"weekly_commits\": $TOTAL }" > stats/commits.json
+
+      - name: Commit stats
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add stats/commits.json
+          git commit -m "Update weekly commits" || exit 0
+          git push
