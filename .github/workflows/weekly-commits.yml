@@ -1,15 +1,15 @@
-name: Weekly User Commits
+name: User Commit Stats
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # alle 6 Stunden
+    - cron: "0 */6 * * *"   # Alle 6 Stunden
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  commits:
+  stats:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,36 +21,52 @@ jobs:
       - name: Install jq
         run: sudo apt-get install -y jq
 
-      - name: Count weekly commits
+      - name: Count weekly and yearly commits
         env:
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          SINCE=$(date -u -d "7 days ago" +"%Y-%m-%dT%H:%M:%SZ")
-          TOTAL=0
-          PAGE=1
+          WEEK_SINCE=$(date -u -d "7 days ago" +"%Y-%m-%dT%H:%M:%SZ")
+          YEAR_SINCE=$(date -u -d "1 year ago" +"%Y-%m-%dT%H:%M:%SZ")
 
-          while true; do
-            DATA=$(curl -s -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/search/commits?q=author:${{ github.actor }}+committer-date:>$SINCE&per_page=100&page=$PAGE")
+          count_commits () {
+            SINCE=$1
+            TOTAL=0
+            PAGE=1
 
-            COUNT=$(echo "$DATA" | jq '.items | length')
-            TOTAL=$((TOTAL + COUNT))
+            while true; do
+              DATA=$(curl -s \
+                -H "Authorization: Bearer $TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/search/commits?q=author:${{ github.actor }}+committer-date:>$SINCE&per_page=100&page=$PAGE")
 
-            [ "$COUNT" -lt 100 ] && break
-            PAGE=$((PAGE + 1))
-          done
+              COUNT=$(echo "$DATA" | jq '.items | length')
+              TOTAL=$((TOTAL + COUNT))
+
+              [ "$COUNT" -lt 100 ] && break
+              PAGE=$((PAGE + 1))
+            done
+
+            echo $TOTAL
+          }
+
+          WEEKLY=$(count_commits "$WEEK_SINCE")
+          YEARLY=$(count_commits "$YEAR_SINCE")
 
           mkdir -p stats
-          echo "{ \"weekly_commits\": $TOTAL }" > stats/commits.json
+          cat <<EOF > stats/commits.json
+          {
+            "weekly_commits": $WEEKLY,
+            "yearly_contributions": $YEARLY
+          }
+          EOF
 
-      - name: Commit & push
+      - name: Commit and push stats
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "github-actions"
 
           git add stats/commits.json
-          git commit -m "Update weekly commits" || exit 0
+          git commit -m "Update commit statistics" || exit 0
 
           git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git
           git push
