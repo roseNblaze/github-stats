@@ -51,7 +51,7 @@ jobs:
 
           WEEKLY=$(count_commits "$WEEK_SINCE")
           YEARLY=$(count_commits "$YEAR_SINCE")
-          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")   # Cachebreaker für GitHub Raw
 
           mkdir -p stats
 
@@ -63,23 +63,13 @@ jobs:
           }
           EOF
 
-      - name: Update badge cachebuster in README.md
-        run: |
-          TS=$(date +%s)
-          
-          if grep -q "cachebuster=" README.md; then
-            sed -i "s/cachebuster=[0-9]*/cachebuster=$TS/" README.md
-          else
-            sed -i "s|\(\.json\)|\1&cachebuster=$TS|g" README.md
-          fi
-
       - name: Commit and push stats
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "github-actions"
 
-          git add stats/commits.json README.md
-          git commit -m "Update commit statistics + refresh badge cache" || exit 0
+          git add stats/commits.json
+          git commit -m "Update commit statistics" || exit 0
 
           git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git
           git push
